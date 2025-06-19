@@ -125,6 +125,8 @@ class ImageBurnerApp:
 
         self.refresh_devices()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        print("DEBUG: ImageBurnerApp.__init__ completed.")
+        print(f"DEBUG: 'on_closing' method available in self: {hasattr(self, 'on_closing')}")
 
     def update_gui_status(self, status_text=None, progress_value=None, operation_active=None):
         """
@@ -243,6 +245,7 @@ class ImageBurnerApp:
         Fetches the list of image filenames from the BASE_IMAGE_URL,
         updates the image listbox, and manages related UI states.
         """
+        print("DEBUG: fetch_and_display_images() method called.")
         if (self.download_thread and self.download_thread.is_alive()) or \
            (self.burn_process and self.burn_process.poll() is None): # Check if any operation is active
             self.root.after_idle(self.update_gui_status, status_text="Operation in progress. Cannot refresh images now.")
@@ -299,8 +302,10 @@ class ImageBurnerApp:
             self.root.after_idle(self.update_gui_status, status_text=f"Error fetching images: {e}")
             print(f"Error fetching images: {e}")
         except Exception as e:
-            self.root.after_idle(self.update_gui_status, status_text=f"An unexpected error occurred: {e}")
-            print(f"An unexpected error occurred: {e}")
+            print(f"DEBUG: fetch_and_display_images caught generic exception: {type(e).__name__} - {e}")
+            err_msg = f"Unexpected error during refresh: {type(e).__name__} - {e}"
+            self.root.after_idle(self.update_gui_status, status_text=err_msg)
+            print(err_msg)
 
         self.on_image_select()
         self.update_burn_button_state()
@@ -328,13 +333,14 @@ class ImageBurnerApp:
         self.downloaded_image_path = None
         os.makedirs(self.DOWNLOAD_DIR, exist_ok=True)
         current_download_path = os.path.join(self.DOWNLOAD_DIR, image_filename)
+        image_url = self.BASE_IMAGE_URL + image_filename # Define image_url here
 
         self.cancel_requested.clear()
         self.root.after_idle(self.update_gui_status, operation_active=True, status_text=f"Preparing to download {image_filename}...")
 
         self.download_thread = threading.Thread(
             target=self._download_thread_worker,
-            args=(image_filename, current_download_path, image_url)
+            args=(image_filename, current_download_path, image_url) # Pass image_url
         )
         self.download_thread.daemon = True
         self.download_thread.start()
@@ -575,6 +581,7 @@ class ImageBurnerApp:
 
     def on_closing(self):
         """Handles the application close request (e.g., from window manager or close button)."""
+        print("DEBUG: on_closing() method called.")
         is_download_active = bool(self.download_thread and self.download_thread.is_alive())
         is_burn_active = bool(self.burn_thread and self.burn_thread.is_alive()) # Check thread
         # Also check burn_process directly in case thread ended but process termination is pending
