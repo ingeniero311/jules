@@ -31,8 +31,9 @@ class ImageBurnerApp:
         self.downloaded_image_path = None
         self.burn_process = None
         self.cancel_requested = threading.Event()
-        self.download_thread = None # To hold the download thread
-        self.download_response_obj = None # Holds the response object for downloads, to allow stream closing
+        self.download_thread = None
+        self.download_response_obj = None
+        self.burn_thread = None # To hold the burn thread object
 
         # Initial check for download directory writability
         try:
@@ -571,6 +572,35 @@ class ImageBurnerApp:
                 print(f"Error trying to terminate/kill dd process {self.burn_process.pid}: {e}")
                 self.root.after_idle(self.update_gui_status, status_text=err_msg)
         # Worker threads handle their own cleanup. update_gui_status(operation_active=False) called by worker's finally.
+
+    def on_closing(self):
+        """Handles the application close request (e.g., from window manager or close button)."""
+        is_download_active = bool(self.download_thread and self.download_thread.is_alive())
+        is_burn_active = bool(self.burn_thread and self.burn_thread.is_alive()) # Check thread
+        # Also check burn_process directly in case thread ended but process termination is pending
+        if not is_burn_active and self.burn_process:
+            is_burn_active = self.burn_process.poll() is None
+
+        if is_download_active or is_burn_active:
+            if messagebox.askyesno("Confirm Exit",
+                                   "An operation is currently in progress. Exiting now will cancel it.\n"
+                                   "Are you sure you want to exit?"):
+                self.root.after_idle(self.update_gui_status, status_text="Exit requested. Cancelling operations...")
+                self.cancel_requested.set() # Signal threads first
+                self.request_cancel_current_operation() # Attempt to actively stop ongoing I/O or processes
+
+                if self.download_thread and self.download_thread.is_alive():
+                    print("Waiting for download thread to join...")
+                    self.download_thread.join(timeout=0.5)
+                if self.burn_thread and self.burn_thread.is_alive():
+                    print("Waiting for burn thread to join...")
+                    self.burn_thread.join(timeout=1.0) # Burn might need a bit longer for dd/sudo kill
+
+                self.root.destroy()
+            else:
+                return # Do not close, user cancelled exit
+        else:
+            self.root.destroy() # No operations active, close directly
 
     def _decompress_image_worker(self, image_path_xz, decompressed_image_path):
         """Worker part for decompressing the image. Runs in burn_image_thread_worker."""
